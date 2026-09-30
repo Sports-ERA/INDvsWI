@@ -750,6 +750,18 @@
             STREAM_CONFIG.rawKeys.split(',').map((pair) => pair.trim().split(':'))
         );
 
+        // The stream host only serves its own origin (403 + a locked
+        // Access-Control-Allow-Origin for everyone else), so every manifest and
+        // segment request is routed through the CORS proxy. The proxy also
+        // rewrites the URLs inside the playlists it returns.
+        const PROXY_ENDPOINT = 'https://stream-relay-buddy.lovable.app/api/public/proxy?url=';
+
+        function throughProxy(url) {
+            if (typeof url !== 'string' || !url) return url;
+            if (!/^https?:\/\//i.test(url) || url.startsWith(PROXY_ENDPOINT)) return url;
+            return PROXY_ENDPOINT + encodeURIComponent(url);
+        }
+
         let streamPlayer = null;
         let streamOverlay = null;
         let streamStatusState = 'idle';
@@ -793,7 +805,7 @@
             streamLoaded = false;
             showPlayerStatus('Loading stream\u2026', 'loading');
             try {
-                await streamPlayer.load(manifestUrl);
+                await streamPlayer.load(throughProxy(manifestUrl));
                 const video = document.getElementById('stream-video');
                 if (video) {
                     const playPromise = video.play();
@@ -882,6 +894,9 @@
                 const networkingEngine = streamPlayer.getNetworkingEngine();
                 if (networkingEngine) {
                     networkingEngine.registerRequestFilter((type, request) => {
+                        // Keep every hop on the CORS proxy, including playlists
+                        // referenced from inside a manifest.
+                        request.uri = throughProxy(request.uri);
                         request.headers['Referer'] = STREAM_CONFIG.referer;
                         request.headers['User-Agent'] = STREAM_CONFIG.userAgent;
                     });
